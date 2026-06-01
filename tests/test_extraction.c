@@ -243,6 +243,40 @@ TEST(extract_qml_issue42) {
     PASS();
 }
 
+/* --- CFML script dialect: .cfc components (Lucee/ColdFusion, #38) --- */
+TEST(extract_cfscript_issue38) {
+    CBMFileResult *r = extract("component {\n"
+                               "    public function getUser(numeric id) {\n"
+                               "        return loadUser(id);\n"
+                               "    }\n"
+                               "    function loadUser(id) {\n"
+                               "        return id * 2;\n"
+                               "    }\n"
+                               "}\n",
+                               CBM_LANG_CFSCRIPT, "app", "User.cfc");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+    ASSERT(count_defs_with_label(r, "Function") >= 2);
+    ASSERT(has_def(r, "Function", "getUser"));
+    ASSERT(has_def(r, "Function", "loadUser"));
+    ASSERT(has_call(r, "loadUser"));
+    cbm_free_result(r);
+    PASS();
+}
+
+/* --- CFML tag dialect: .cfm templates with <cffunction> (#38) --- */
+TEST(extract_cfml_tag_issue38) {
+    CBMFileResult *r = extract("<cffunction name=\"greet\" returntype=\"string\">\n"
+                               "    <cfargument name=\"who\" type=\"string\">\n"
+                               "    <cfreturn \"Hello \" & arguments.who>\n"
+                               "</cffunction>\n",
+                               CBM_LANG_CFML, "app", "index.cfm");
+    ASSERT_NOT_NULL(r);
+    ASSERT(has_def(r, "Function", "greet"));
+    cbm_free_result(r);
+    PASS();
+}
+
 /* --- Java --- */
 TEST(java_class) {
     CBMFileResult *r = extract(
@@ -2518,6 +2552,8 @@ SUITE(extraction) {
     RUN_TEST(extract_powershell_issue35);
     RUN_TEST(extract_luau_issue39);
     RUN_TEST(extract_qml_issue42);
+    RUN_TEST(extract_cfscript_issue38);
+    RUN_TEST(extract_cfml_tag_issue38);
 
     /* OOP */
     RUN_TEST(java_class);

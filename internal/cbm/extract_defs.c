@@ -3613,6 +3613,67 @@ static void push_class_body_children(TSNode node, const CBMLangSpec *spec, walk_
     }
 }
 
+// ASCII case-insensitive equality vs a lowercase literal (CFML attribute names
+// are case-insensitive, e.g. NAME / Name / name).
+static bool ascii_ci_equals(const char *s, const char *lower_lit) {
+    if (!s) {
+        return false;
+    }
+    for (; *s && *lower_lit; s++, lower_lit++) {
+        if (tolower((unsigned char)*s) != (unsigned char)*lower_lit) {
+            return false;
+        }
+    }
+    return *s == '\0' && *lower_lit == '\0';
+}
+
+// CFML tag function: <cffunction name="foo" ...> ... </cffunction> (#38). The
+// cf_function_tag node has no `name` field — the name lives in a cf_attribute
+// child (name="foo"). Emit a Function node named after that attribute value.
+static void extract_cfml_function_tag(CBMExtractCtx *ctx, TSNode node) {
+    CBMArena *a = ctx->arena;
+    char *name = NULL;
+    uint32_t cc = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < cc && !name; i++) {
+        TSNode ch = ts_node_named_child(node, i);
+        if (strcmp(ts_node_type(ch), "cf_attribute") != 0) {
+            continue;
+        }
+        TSNode an = cbm_find_child_by_kind(ch, "cf_attribute_name");
+        if (ts_node_is_null(an)) {
+            continue;
+        }
+        char *aname = cbm_node_text(a, an, ctx->source);
+        if (!ascii_ci_equals(aname, "name")) {
+            continue;
+        }
+        TSNode val = cbm_find_child_by_kind(ch, "quoted_cf_attribute_value");
+        if (ts_node_is_null(val)) {
+            val = cbm_find_child_by_kind(ch, "cf_attribute_value");
+        }
+        if (ts_node_is_null(val)) {
+            continue;
+        }
+        TSNode inner = cbm_find_child_by_kind(val, "attribute_value");
+        name = cbm_node_text(a, ts_node_is_null(inner) ? val : inner, ctx->source);
+    }
+    if (!name || !name[0]) {
+        return;
+    }
+
+    CBMDefinition def;
+    memset(&def, 0, sizeof(def));
+    def.name = name;
+    def.qualified_name = cbm_fqn_compute(a, ctx->project, ctx->rel_path, name);
+    def.label = "Function";
+    def.file_path = ctx->rel_path;
+    def.start_line = ts_node_start_point(node).row + TS_LINE_OFFSET;
+    def.end_line = ts_node_end_point(node).row + TS_LINE_OFFSET;
+    def.lines = (int)(def.end_line - def.start_line + TS_LINE_OFFSET);
+    def.is_exported = true;
+    cbm_defs_push(&ctx->result->defs, a, def);
+}
+
 // Languages that use the C preprocessor and therefore have #define macros.
 static bool is_c_preprocessor_lang(CBMLanguage lang) {
     return lang == CBM_LANG_C || lang == CBM_LANG_CPP || lang == CBM_LANG_CUDA ||
@@ -3675,6 +3736,11 @@ static void walk_defs(CBMExtractCtx *ctx, TSNode root, const CBMLangSpec *spec, 
             (strcmp(kind, "preproc_def") == 0 || strcmp(kind, "preproc_function_def") == 0)) {
             extract_c_macro_def(ctx, node);
             continue; // the macro body is a preproc_arg — nothing more to extract
+        }
+
+        if (ctx->language == CBM_LANG_CFML && strcmp(kind, "cf_function_tag") == 0) {
+            extract_cfml_function_tag(ctx, node);
+            // fall through: descend into the body for nested tags / calls
         }
 
         if (cbm_kind_in_set(node, spec->function_node_types)) {

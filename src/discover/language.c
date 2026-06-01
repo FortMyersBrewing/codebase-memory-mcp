@@ -433,6 +433,10 @@ static const ext_entry_t EXT_TABLE[] = {
     /* Qt QML */
     {".qml", CBM_LANG_QML},
 
+    /* CFML / ColdFusion — .cfc components are script-dialect; .cfm are tag templates */
+    {".cfc", CBM_LANG_CFSCRIPT},
+    {".cfm", CBM_LANG_CFML},
+
     /* Mermaid */
     {".mermaid", CBM_LANG_MERMAID},
 
@@ -753,6 +757,8 @@ static const char *LANG_NAMES[CBM_LANG_COUNT] = {
     [CBM_LANG_PONY] = "Pony",
     [CBM_LANG_LUAU] = "Luau",
     [CBM_LANG_QML] = "QML",
+    [CBM_LANG_CFSCRIPT] = "CFML",
+    [CBM_LANG_CFML] = "CFML",
     [CBM_LANG_JANET] = "Janet",
     [CBM_LANG_SWAY] = "Sway",
     [CBM_LANG_NASM] = "NASM",

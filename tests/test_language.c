@@ -753,6 +753,12 @@ TEST(lang_ext_qml) {
     PASS();
 }
 
+TEST(lang_ext_cfml) {
+    ASSERT_EQ(cbm_language_for_extension(".cfc"), CBM_LANG_CFSCRIPT);
+    ASSERT_EQ(cbm_language_for_extension(".cfm"), CBM_LANG_CFML);
+    PASS();
+}
+
 TEST(lang_ext_janet) {
     ASSERT_EQ(cbm_language_for_extension(".janet"), CBM_LANG_JANET);
     PASS();
@@ -1222,6 +1228,7 @@ SUITE(language) {
     RUN_TEST(lang_ext_pony);
     RUN_TEST(lang_ext_luau);
     RUN_TEST(lang_ext_qml);
+    RUN_TEST(lang_ext_cfml);
     RUN_TEST(lang_ext_janet);
     RUN_TEST(lang_ext_sway);
     RUN_TEST(lang_ext_nasm);

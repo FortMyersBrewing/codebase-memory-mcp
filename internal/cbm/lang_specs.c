@@ -99,6 +99,8 @@ extern const TSLanguage *tree_sitter_hare(void);
 extern const TSLanguage *tree_sitter_pony(void);
 extern const TSLanguage *tree_sitter_luau(void);
 extern const TSLanguage *tree_sitter_qmljs(void);
+extern const TSLanguage *tree_sitter_cfscript(void);
+extern const TSLanguage *tree_sitter_cfml(void);
 extern const TSLanguage *tree_sitter_janet_simple(void);
 extern const TSLanguage *tree_sitter_sway(void);
 extern const TSLanguage *tree_sitter_nasm(void);
@@ -263,6 +265,26 @@ static const char *qml_class_types[] = {"class_declaration",
 static const char *qml_field_types[] = {"ui_property", "ui_signal", "public_field_definition",
                                         NULL};
 static const char *qml_import_types[] = {"import_statement", "import", "ui_import", NULL};
+
+// ==================== CFScript (CFML .cfc script dialect) ====================
+// JS-like grammar: components contain function/method declarations. Reuses the
+// JS call/branch/var/module arrays.
+static const char *cfscript_func_types[] = {"function_declaration", "function_expression",
+                                            "arrow_function", "method_definition", NULL};
+static const char *cfscript_field_types[] = {"property_declaration", NULL};
+static const char *cfscript_import_types[] = {"import_statement", "import", NULL};
+
+// ==================== CFML (tag dialect — .cfm templates) ====================
+// Tag-based grammar (HTML-derived). Embedded <cfscript> functions appear as
+// function_declaration/function_expression; tag <cffunction> nodes
+// (cf_function_tag) are handled separately in the definition walker because
+// their name lives in a cf_attribute rather than a `name` field.
+static const char *cfml_func_types[] = {"function_declaration", "function_expression", NULL};
+static const char *cfml_call_types[] = {"call_expression", NULL};
+static const char *cfml_branch_types[] = {
+    "cf_if_tag",     "cf_elseif_tag",   "cf_else_tag",      "if_statement",
+    "for_statement", "while_statement", "switch_statement", NULL};
+static const char *cfml_module_types[] = {"program", "component_file", NULL};
 
 // ==================== RUST ====================
 static const char *rust_func_types[] = {"function_item", "function_signature_item",
@@ -1959,6 +1981,19 @@ static const CBMLangSpec lang_specs[CBM_LANG_COUNT] = {
          js_call_types, qml_import_types, qml_import_types, js_branch_types, js_var_types,
          (const char *[]){"assignment_expression", "augmented_assignment_expression", NULL},
          js_throw_types, NULL, ts_decorator_types, NULL, NULL, tree_sitter_qmljs, NULL},
+
+    // CBM_LANG_CFSCRIPT
+    [CBM_LANG_CFSCRIPT] =
+        {CBM_LANG_CFSCRIPT, cfscript_func_types, empty_types, cfscript_field_types, js_module_types,
+         js_call_types, cfscript_import_types, cfscript_import_types, js_branch_types, js_var_types,
+         (const char *[]){"assignment_expression", "augmented_assignment_expression", NULL},
+         js_throw_types, NULL, empty_types, NULL, NULL, tree_sitter_cfscript, NULL},
+
+    // CBM_LANG_CFML
+    [CBM_LANG_CFML] = {CBM_LANG_CFML, cfml_func_types, empty_types, empty_types, cfml_module_types,
+                       cfml_call_types, empty_types, empty_types, cfml_branch_types, empty_types,
+                       empty_types, empty_types, NULL, empty_types, NULL, NULL, tree_sitter_cfml,
+                       NULL},
 
     // CBM_LANG_GLEAM
     [CBM_LANG_GLEAM] = {CBM_LANG_GLEAM, gleam_func_types, gleam_class_types, gleam_field_types,
