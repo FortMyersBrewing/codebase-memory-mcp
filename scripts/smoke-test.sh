@@ -96,6 +96,29 @@ database:
   host: localhost
 YAMLEOF
 
+# C++ crash reproduction (#424): a large, templated C++ header. The vendored
+# tree-sitter runtime previously corrupted the heap and SEGV'd mid-parse on
+# large templated C++ in the PRODUCTION build (MI_OVERRIDE=1) — most reliably on
+# Windows static-MinGW, where ts_malloc/ts_free could resolve to different
+# allocators. Generating a header with heavy parse churn exercises that path;
+# the prod binary must index it without crashing (status must be "indexed").
+python3 - "$TMPDIR/src/big_templated.hpp" << 'GENEOF'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("#include <cstddef>\nnamespace repro {\n")
+    for i in range(1500):
+        f.write(
+            "template <typename T> struct Box{0} {{\n"
+            "  T value;\n"
+            "  bool operator<(const Box{0} &o) const {{ return value < o.value; }}\n"
+            "  bool operator==(const Box{0} &o) const {{ return value == o.value; }}\n"
+            "  bool operator>(const Box{0} &o) const {{ return o.value < value; }}\n"
+            "  T get() const {{ return value; }}\n"
+            "}};\n".format(i)
+        )
+    f.write("}\n")
+GENEOF
+
 # Index
 RESULT=$(cli index_repository "{\"repo_path\":\"$TMPDIR\"}")
 echo "$RESULT"
