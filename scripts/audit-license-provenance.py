@@ -213,6 +213,14 @@ def main():
               open("/tmp/audit_licenses_results.json", "w"), indent=1)
     print("\nfull results: /tmp/audit_licenses_results.json")
 
+    accepted = {"IDENTICAL", "IDENTICAL@PINNED", "FIRST-PARTY-OK",
+                "FIRST-PARTY-NOTICE", "MANUAL-VERIFIED"}
+    bad = {k: v for k, v in results.items() if v[0] not in accepted}
+    if bad:
+        print(f"\nPROVENANCE AUDIT FAILED: {len(bad)} unexplained verdict(s)")
+        sys.exit(1)
+    print("\nPROVENANCE AUDIT PASSED: every vendored license accounted for")
+
 
 if __name__ == "__main__":
     main()

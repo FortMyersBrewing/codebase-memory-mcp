@@ -18,6 +18,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# --selftest: plant a violation and assert the structural layer catches it.
+# Run in CI before the real gate so a silently-broken gate cannot pass.
+if [ "${1:-}" = "--selftest" ]; then
+    TESTDIR="$ROOT/vendored/.gate-selftest-$$"
+    mkdir -p "$TESTDIR"
+    echo "int x;" > "$TESTDIR/x.c"
+    # The child gate exits 1 on the planted violation (that is the point) —
+    # capture its output first so pipefail cannot mask the grep result.
+    GATE_OUT="$("$0" 2>/dev/null || true)"
+    rm -rf "$TESTDIR"
+    if printf '%s' "$GATE_OUT" | grep -q "BLOCKED: vendored code in .*gate-selftest"; then
+        echo "OK: gate self-test — planted violation was detected"
+        exit 0
+    fi
+    echo "FAIL: gate self-test — planted unlicensed file was NOT detected"
+    exit 1
+fi
+
 echo "=== License gate 1/2: structural coverage ==="
 # Rule: every directory under either vendored tree that contains source or
 # data files must have a license file in itself or an ancestor directory
