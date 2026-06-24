@@ -424,6 +424,52 @@ void handle_field_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *s
     cbm_field_accesses_push(&ctx->result->field_accesses, ctx->arena, fa);
 }
 
+// IL: method-reference (ldftn / ldvirtftn) — delegate/lambda construction.
+// Emits an edge carrying owner type + method name + enclosing method.
+void handle_method_references(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec,
+                              WalkState *state) {
+    if (spec->language != CBM_LANG_IL) {
+        return;
+    }
+    if (ts_node_is_null(node) || strcmp(ts_node_type(node), "method_reference_instruction") != 0) {
+        return;
+    }
+
+    TSNode mtd = ts_node_child_by_field_name(node, TS_FIELD("method"));
+    if (ts_node_is_null(mtd)) {
+        return;
+    }
+    char *method_name = cbm_node_text(ctx->arena, mtd, ctx->source);
+    if (!method_name || !method_name[0]) {
+        return;
+    }
+
+    // owner type = named child immediately before the method name (skip generic_suffix).
+    char *owner_type = NULL;
+    uint32_t nc = ts_node_named_child_count(node);
+    for (int i = (int)nc - 1; i >= 0; i--) {
+        TSNode c = ts_node_named_child(node, (uint32_t)i);
+        if (ts_node_eq(c, mtd) && i > 0) {
+            int oi = i - 1;
+            TSNode maybe = ts_node_named_child(node, (uint32_t)oi);
+            if (!ts_node_is_null(maybe) && strcmp(ts_node_type(maybe), "generic_suffix") == 0 && oi > 0) {
+                oi--;
+            }
+            TSNode owner = ts_node_named_child(node, (uint32_t)oi);
+            if (!ts_node_is_null(owner)) {
+                owner_type = cbm_node_text(ctx->arena, owner, ctx->source);
+            }
+            break;
+        }
+    }
+
+    CBMMethodReference mr = {0};
+    mr.owner_type = owner_type;
+    mr.method_name = method_name;
+    mr.enclosing_func_qn = state->enclosing_func_qn;
+    cbm_method_references_push(&ctx->result->method_references, ctx->arena, mr);
+}
+
 void handle_readwrites(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state) {
     if (!spec->assignment_node_types || !spec->assignment_node_types[0]) {
         return;

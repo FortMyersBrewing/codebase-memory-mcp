@@ -148,6 +148,11 @@ void cbm_field_accesses_push(CBMFieldAccessArray *arr, CBMArena *a, CBMFieldAcce
     arr->items[arr->count++] = fa;
 }
 
+void cbm_method_references_push(CBMMethodReferenceArray *arr, CBMArena *a, CBMMethodReference mr) {
+    GROW_ARRAY(arr, a);
+    arr->items[arr->count++] = mr;
+}
+
 void cbm_rw_push(CBMRWArray *arr, CBMArena *a, CBMReadWrite rw) {
     GROW_ARRAY(arr, a);
     arr->items[arr->count++] = rw;
