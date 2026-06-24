@@ -851,6 +851,7 @@ void cbm_extract_unified(CBMExtractCtx *ctx) {
         handle_calls(ctx, node, spec, &state);
         handle_usages(ctx, node, spec, &state);
         handle_throws(ctx, node, spec, &state);
+        handle_field_accesses(ctx, node, spec, &state);
         handle_readwrites(ctx, node, spec, &state);
         handle_type_refs(ctx, node, spec, &state);
         handle_env_accesses(ctx, node, spec, &state);

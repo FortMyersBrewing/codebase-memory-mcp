@@ -37,6 +37,7 @@ typedef struct {
 void handle_calls(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
 void handle_usages(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
 void handle_throws(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
+void handle_field_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
 void handle_readwrites(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
 void handle_type_refs(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state);
 void handle_env_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec,

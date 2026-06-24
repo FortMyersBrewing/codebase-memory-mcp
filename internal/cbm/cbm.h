@@ -262,6 +262,13 @@ typedef struct {
 } CBMReadWrite;
 
 typedef struct {
+    const char *owner_type;        // IL: owner type of the field (before ::)
+    const char *field_name;        // IL: field name (after ::)
+    const char *enclosing_func_qn; // QN of enclosing method
+    bool is_write;                 // stfld/stsfld=write; ldfld/ldsfld/ldflda=read
+} CBMFieldAccess;
+
+typedef struct {
     const char *type_name;         // referenced type/class name
     const char *enclosing_func_qn; // QN of enclosing function
 } CBMTypeRef;
@@ -371,6 +378,12 @@ typedef struct {
 } CBMThrowArray;
 
 typedef struct {
+    CBMFieldAccess *items;
+    int count;
+    int cap;
+} CBMFieldAccessArray;
+
+typedef struct {
     CBMReadWrite *items;
     int count;
     int cap;
@@ -436,6 +449,7 @@ typedef struct {
     CBMStringRefArray string_refs;       // URL/config string literals from AST
     CBMInfraBindingArray infra_bindings; // topic→URL pairs from IaC configs
     CBMChannelArray channels;            // Socket.IO / EventEmitter pub/sub participation
+    CBMFieldAccessArray field_accesses;  // IL: field read/write edges
 
     const char *module_qn;      // module qualified name
     const char *namespace_name; // declared namespace/package (Java/Kotlin/C#/PHP), NULL if none
@@ -572,6 +586,7 @@ void cbm_calls_push(CBMCallArray *arr, CBMArena *a, CBMCall call);
 void cbm_imports_push(CBMImportArray *arr, CBMArena *a, CBMImport imp);
 void cbm_usages_push(CBMUsageArray *arr, CBMArena *a, CBMUsage usage);
 void cbm_throws_push(CBMThrowArray *arr, CBMArena *a, CBMThrow thr);
+void cbm_field_accesses_push(CBMFieldAccessArray *arr, CBMArena *a, CBMFieldAccess fa);
 void cbm_rw_push(CBMRWArray *arr, CBMArena *a, CBMReadWrite rw);
 void cbm_typerefs_push(CBMTypeRefArray *arr, CBMArena *a, CBMTypeRef tr);
 void cbm_envaccess_push(CBMEnvAccessArray *arr, CBMArena *a, CBMEnvAccess ea);

@@ -132,7 +132,7 @@ static char *il_resolve_throw_exception(CBMArena *a, TSNode throw_node, const ch
     if (ts_node_is_null(call)) return NULL;
     TSNode opcode = ts_node_child_by_field_name(call, TS_FIELD("opcode"));
     char *op = ts_node_is_null(opcode) ? NULL : cbm_node_text(a, opcode, source);
-    if (!op || strcmp(op, "newobj") != 0) return NULL;
+    if (!op || strcmp(op, "newobj") != 0) return "(rethrow)";
     TSNode fn = ts_node_child_by_field_name(call, TS_FIELD("function")); // method_name
     if (ts_node_is_null(fn)) return NULL;
     // owner type = named child immediately before method_name
@@ -147,7 +147,7 @@ static char *il_resolve_throw_exception(CBMArena *a, TSNode throw_node, const ch
             break;
         }
     }
-    return NULL;
+    return "(rethrow)";
 }
 
 // Process a single node for throw extraction (called from iterative walker).
@@ -370,6 +370,58 @@ void handle_throws(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, Wal
     }
 
     extract_throws_clause(ctx, node, spec, state->enclosing_func_qn);
+}
+
+// IL: field read/write access (ldfld/ldsfld/stfld/stsfld/ldflda). Emits an edge
+// carrying owner type + field name + enclosing method + read/write flag.
+void handle_field_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec,
+                           WalkState *state) {
+    if (spec->language != CBM_LANG_IL) {
+        return;
+    }
+    if (ts_node_is_null(node) || strcmp(ts_node_type(node), "field_instruction") != 0) {
+        return;
+    }
+
+    TSNode fld = ts_node_child_by_field_name(node, TS_FIELD("field"));
+    if (ts_node_is_null(fld)) {
+        return;
+    }
+    char *field_name = cbm_node_text(ctx->arena, fld, ctx->source);
+    if (!field_name || !field_name[0]) {
+        return;
+    }
+
+    TSNode opcode = ts_node_child_by_field_name(node, TS_FIELD("opcode"));
+    char *op = ts_node_is_null(opcode) ? NULL : cbm_node_text(ctx->arena, opcode, ctx->source);
+    bool is_write = op && (strcmp(op, "stfld") == 0 || strcmp(op, "stsfld") == 0);
+
+    // owner type = named child immediately before the field name.
+    char *owner_type = NULL;
+    uint32_t nc = ts_node_named_child_count(node);
+    for (int i = (int)nc - 1; i >= 0; i--) {
+        TSNode c = ts_node_named_child(node, (uint32_t)i);
+        if (ts_node_eq(c, fld) && i > 0) {
+            int oi = i - 1;
+            TSNode maybe = ts_node_named_child(node, (uint32_t)oi);
+            // skip generic_suffix (owner is Foo<T>) to reach the qualified_identifier
+            if (!ts_node_is_null(maybe) && strcmp(ts_node_type(maybe), "generic_suffix") == 0 && oi > 0) {
+                oi--;
+            }
+            TSNode owner = ts_node_named_child(node, (uint32_t)oi);
+            if (!ts_node_is_null(owner)) {
+                owner_type = cbm_node_text(ctx->arena, owner, ctx->source);
+            }
+            break;
+        }
+    }
+
+    CBMFieldAccess fa = {0};
+    fa.owner_type = owner_type;
+    fa.field_name = field_name;
+    fa.enclosing_func_qn = state->enclosing_func_qn;
+    fa.is_write = is_write;
+    cbm_field_accesses_push(&ctx->result->field_accesses, ctx->arena, fa);
 }
 
 void handle_readwrites(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state) {
