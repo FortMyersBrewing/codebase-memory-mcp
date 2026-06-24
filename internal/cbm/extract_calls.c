@@ -252,6 +252,7 @@ static char *extract_callee_from_fields(CBMArena *a, TSNode node, const char *so
             strcmp(fk, "function") == 0 || strcmp(fk, "dotted_identifier") == 0 ||
             strcmp(fk, "member_access_expression") == 0 || strcmp(fk, "scoped_identifier") == 0 ||
             strcmp(fk, "qualified_identifier") == 0 ||
+            strcmp(fk, "method_name") == 0 || /* IL: call target name */
             /* ReScript: call_expression `function` field is a value_identifier
              * (or value_identifier_path for module-qualified calls). */
             strcmp(fk, "value_identifier") == 0 || strcmp(fk, "value_identifier_path") == 0) {

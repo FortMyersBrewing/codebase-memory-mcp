@@ -164,6 +164,7 @@ extern const TSLanguage *tree_sitter_apex(void);
 extern const TSLanguage *tree_sitter_soql(void);
 extern const TSLanguage *tree_sitter_sosl(void);
 extern const TSLanguage *tree_sitter_pine(void);
+extern const TSLanguage *tree_sitter_il(void);
 
 // -- Empty sentinel --
 static const char *empty_types[] = {NULL};
@@ -1556,6 +1557,17 @@ static const char *make_import_types[] = {"include", "include_directive", NULL};
 static const char *pine_func_types[] = {"function_declaration_statement", NULL};
 static const char *pine_class_types[] = {"type_definition_statement", NULL};
 static const char *pine_module_types[] = {"source_file", NULL};
+
+// .NET IL (ILASM/CIL). Node-type names map 1:1 onto semantic categories.
+static const char *il_func_types[] = {"method_definition", NULL};
+static const char *il_class_types[] = {"class_definition", NULL};
+static const char *il_field_types[] = {"field_definition", NULL};
+static const char *il_module_types[] = {"compilation_unit", NULL};
+static const char *il_call_types[] = {"call_instruction", NULL};
+static const char *il_import_types[] = {"extern_assembly", NULL};
+static const char *il_branch_types[] = {"exception_block", NULL};
+static const char *il_var_types[] = {"local_declaration", NULL};
+static const char *il_throw_types[] = {"throw_instruction", NULL};
 static const char *pine_call_types[] = {"call", NULL};
 static const char *pine_var_types[] = {"variable_definition_statement",
                                        "tuple_declaration_statement", NULL};
@@ -2536,6 +2548,12 @@ static const CBMLangSpec lang_specs[CBM_LANG_COUNT] = {
                        pine_module_types, pine_call_types, empty_types, empty_types,
                        pine_branch_types, pine_var_types, pine_assign_types, empty_types, NULL,
                        empty_types, NULL, NULL, tree_sitter_pine, NULL},
+
+    // CBM_LANG_IL — .NET IL (ILASM/CIL). local/tree-sitter-il (MIT).
+    [CBM_LANG_IL] = {CBM_LANG_IL, il_func_types, il_class_types, il_field_types,
+                     il_module_types, il_call_types, il_import_types, empty_types,
+                     il_branch_types, il_var_types, empty_types, il_throw_types, NULL,
+                     empty_types, NULL, NULL, tree_sitter_il, NULL},
 
 };
 

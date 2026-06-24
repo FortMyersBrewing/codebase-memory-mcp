@@ -140,6 +140,9 @@ static const ext_entry_t EXT_TABLE[] = {
     /* INI */
     {".cfg", CBM_LANG_INI},
     {".conf", CBM_LANG_INI},
+    /* .NET IL (ILASM / CIL) */
+    {".il", CBM_LANG_IL},
+
     {".ini", CBM_LANG_INI},
 
     /* Java */
@@ -742,6 +745,7 @@ static const char *LANG_NAMES[CBM_LANG_COUNT] = {
     [CBM_LANG_KUSTOMIZE] = "Kustomize",
     [CBM_LANG_K8S] = "Kubernetes",
     [CBM_LANG_PINE] = "PineScript",
+    [CBM_LANG_IL] = ".NET IL",
     [CBM_LANG_SOLIDITY] = "Solidity",
     [CBM_LANG_TYPST] = "Typst",
     [CBM_LANG_GDSCRIPT] = "GDScript",

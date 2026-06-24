@@ -1291,5 +1291,19 @@
     "filenames": [],
     "has_scanner": true,
     "module_root": "source_file"
+  },
+  {
+    "name": "il",
+    "enum": "IL",
+    "display": ".NET IL",
+    "ts_func": "tree_sitter_il",
+    "repo": "https://github.com/local/tree-sitter-il",
+    "subdir": "",
+    "extensions": [
+      ".il"
+    ],
+    "filenames": [],
+    "has_scanner": false,
+    "module_root": "compilation_unit"
   }
 ]

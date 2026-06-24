@@ -137,6 +137,7 @@ Guarded by the `contract_all_grammars_in_graph` graph-breadth test in
 | objc | 14 | tree-sitter-grammars/tree-sitter-objc | `181a81b8f23a` | VERIFIED-NVIM | ✅ |
 | objectscript_routine | 15 | intersystems/tree-sitter-objectscript | `a7ffcdf2de8e` | vendor-maintained | ✅ |
 | objectscript_udl | 15 | intersystems/tree-sitter-objectscript | `a7ffcdf2de8e` | vendor-maintained | ✅ |
+| il | 15 | local/tree-sitter-il (first-party — authored for this integration) | `initial` | first-party | ✅ |
 | ocaml | 14 | tree-sitter/tree-sitter-ocaml | `5a979b3ec7f1` | VERIFIED-BOTH | ✅ |
 | odin | 14 | tree-sitter-grammars/tree-sitter-odin | `d2ca8efb4487` | VERIFIED-BOTH | ✅ |
 | pascal | 14 | Isopod/tree-sitter-pascal | `042119eca2e1` | VERIFIED-BOTH | ✅ |
