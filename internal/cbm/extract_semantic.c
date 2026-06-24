@@ -104,10 +104,59 @@ static void extract_throws_clause(CBMExtractCtx *ctx, TSNode node, const CBMLang
     }
 }
 
+// IL: `throw` has no operand — the thrown exception is the owner type of the
+// immediately-preceding `newobj` call. Resolve it from that sibling.
+static char *il_resolve_throw_exception(CBMArena *a, TSNode throw_node, const char *source) {
+    TSNode instr = ts_node_parent(throw_node);            // `instruction` wrapper
+    if (ts_node_is_null(instr)) return NULL;
+    // Walk back past inter-instruction hex comments to the previous instruction.
+    TSNode prev = instr;
+    while (1) {
+        prev = ts_node_prev_named_sibling(prev);
+        if (ts_node_is_null(prev)) return NULL;
+        if (strcmp(ts_node_type(prev), "comment") == 0) continue;
+        break;
+    }
+    if (ts_node_named_child_count(prev) == 0) return NULL;
+    // Find the call_instruction among the instruction's named children (a leading
+    // `label` child like `IL_0008:` may precede it).
+    TSNode call = {0};
+    uint32_t pnc = ts_node_named_child_count(prev);
+    for (uint32_t i = 0; i < pnc; i++) {
+        TSNode c = ts_node_named_child(prev, i);
+        if (strcmp(ts_node_type(c), "call_instruction") == 0) {
+            call = c;
+            break;
+        }
+    }
+    if (ts_node_is_null(call)) return NULL;
+    TSNode opcode = ts_node_child_by_field_name(call, TS_FIELD("opcode"));
+    char *op = ts_node_is_null(opcode) ? NULL : cbm_node_text(a, opcode, source);
+    if (!op || strcmp(op, "newobj") != 0) return NULL;
+    TSNode fn = ts_node_child_by_field_name(call, TS_FIELD("function")); // method_name
+    if (ts_node_is_null(fn)) return NULL;
+    // owner type = named child immediately before method_name
+    uint32_t nc = ts_node_named_child_count(call);
+    for (int i = (int)nc - 1; i >= 0; i--) {
+        TSNode c = ts_node_named_child(call, (uint32_t)i);
+        if (ts_node_eq(c, fn) && i > 0) {
+            TSNode owner = ts_node_named_child(call, (uint32_t)i - 1);
+            if (!ts_node_is_null(owner)) {
+                return cbm_node_text(a, owner, source);
+            }
+            break;
+        }
+    }
+    return NULL;
+}
+
 // Process a single node for throw extraction (called from iterative walker).
 static void process_throw_node(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec) {
     if (is_throw_node(node, spec)) {
         char *exc_name = resolve_exception_name(ctx->arena, node, ctx->source);
+        if ((!exc_name || !exc_name[0]) && spec->language == CBM_LANG_IL) {
+            exc_name = il_resolve_throw_exception(ctx->arena, node, ctx->source);
+        }
         if (exc_name && exc_name[0]) {
             if (strlen(exc_name) > MAX_EXCEPTION_NAME_LEN) {
                 exc_name[MAX_EXCEPTION_NAME_LEN] = '\0';
@@ -306,6 +355,9 @@ void handle_throws(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, Wal
 
     if (has_throws && is_throw_node(node, spec)) {
         char *exc_name = resolve_exception_name(ctx->arena, node, ctx->source);
+        if ((!exc_name || !exc_name[0]) && spec->language == CBM_LANG_IL) {
+            exc_name = il_resolve_throw_exception(ctx->arena, node, ctx->source);
+        }
         if (exc_name && exc_name[0]) {
             if (strlen(exc_name) > MAX_EXCEPTION_NAME_LEN) {
                 exc_name[MAX_EXCEPTION_NAME_LEN] = '\0';
