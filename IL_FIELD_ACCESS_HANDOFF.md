@@ -218,6 +218,30 @@ Files changed (C-side only; grammar untouched; no struct changes):
 - `internal/cbm/extract_semantic.c` — `handle_field_accesses` also pushes an
   owner-qualified `CBMReadWrite` into `result->rw`.
 
-Pending: cbm clean suite (regression gate) + full `ILDump` re-index so the live
-graph carries field-access edges. (`method_reference`/`ldftn` left under USAGE
-as the handoff allowed — taxonomy choice, not data loss.)
+### Status
+
+- **Fix complete & committed** (`6e97238`). Clean suite green (exit 0, 0
+  segfaults, IL regression PASS).
+- **Validated** on a fresh re-index of `MaxSea.S57S63Installer` (table above).
+- `method_reference`/`ldftn` left under USAGE as the handoff allowed — taxonomy
+  choice, not data loss.
+
+### Refreshing the live full `ILDump` graph (deployment note)
+
+The full project (`C-Users-whyter-projects-ILDump`) still holds the **pre-fix**
+graph (no Field nodes). It can't be refreshed in place because:
+1. cbm's incremental indexer is **content-hash based** — the `.il` files didn't
+   change (only the extractor did), so re-indexing is a `incremental.noop`.
+2. The forced-reindex path (and a manual `rm`) is blocked: the running `cbm-dev`
+   server processes hold `…/.cache/codebase-memory-mcp/C-Users-whyter-projects-ILDump.db`
+   open ("Device or resource busy").
+
+To refresh, with the running servers stopped:
+```
+# 1. Close the Claude Code window(s) using cbm-dev (releases the db lock)
+rm ~/.cache/codebase-memory-mcp/C-Users-whyter-projects-ILDump.db*
+# 2. New window → cbm-dev index_repository on C:/Users/whyter/projects/ILDump
+```
+Expect Field nodes in the tens of thousands and WRITES/READS-to-Field edges in
+the thousands (≈679 field edges came from the single `MaxSea.S57S63Installer`
+assembly alone).
