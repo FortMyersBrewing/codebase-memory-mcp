@@ -4822,6 +4822,47 @@ static void extract_class_fields(CBMExtractCtx *ctx, TSNode class_node, const ch
             continue;
         }
 
+        /* IL: `field_definition` labels only `name`; its type is an unlabeled
+         * `_type` child (grammar is frozen), so the type-field-based shapes
+         * below never match and every IL field would be skipped. Build the
+         * Field def directly: name from the `name` field, type from the named
+         * child immediately preceding it. */
+        if (ctx->language == CBM_LANG_IL) {
+            TSNode il_nm = ts_node_child_by_field_name(child, TS_FIELD("name"));
+            if (ts_node_is_null(il_nm)) {
+                continue;
+            }
+            char *il_name = cbm_node_text(a, il_nm, ctx->source);
+            if (!il_name || !il_name[0]) {
+                continue;
+            }
+            char *il_type = NULL;
+            uint32_t il_nc = ts_node_named_child_count(child);
+            for (int k = (int)il_nc - 1; k >= 0; k--) {
+                TSNode c = ts_node_named_child(child, (uint32_t)k);
+                if (ts_node_eq(c, il_nm)) {
+                    if (k > 0) {
+                        il_type = cbm_node_text(a, ts_node_named_child(child, (uint32_t)(k - 1)),
+                                                ctx->source);
+                    }
+                    break;
+                }
+            }
+            CBMDefinition il_def;
+            memset(&il_def, 0, sizeof(il_def));
+            il_def.name = il_name;
+            il_def.qualified_name = cbm_arena_sprintf(a, "%s.%s", class_qn, il_name);
+            il_def.label = "Field";
+            il_def.file_path = ctx->rel_path;
+            il_def.parent_class = class_qn;
+            il_def.return_type = il_type ? il_type : "";
+            il_def.start_line = ts_node_start_point(child).row + TS_LINE_OFFSET;
+            il_def.end_line = ts_node_end_point(child).row + TS_LINE_OFFSET;
+            il_def.is_exported = cbm_is_exported(il_name, ctx->language);
+            cbm_defs_push(&ctx->result->defs, a, il_def);
+            continue;
+        }
+
         if (is_func_ptr_field(child)) {
             continue;
         }

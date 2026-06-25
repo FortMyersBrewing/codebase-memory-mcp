@@ -422,6 +422,17 @@ void handle_field_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *s
     fa.enclosing_func_qn = state->enclosing_func_qn;
     fa.is_write = is_write;
     cbm_field_accesses_push(&ctx->result->field_accesses, ctx->arena, fa);
+
+    /* Also emit as a read/write so the existing rw resolver (pass_parallel.c /
+     * pass_usages.c) turns it into a READS/WRITES edge. Use an owner-qualified
+     * name: bare field names like '<>1__state' repeat across thousands of
+     * state-machine classes and would resolve ambiguously via suffix-match. */
+    CBMReadWrite rw = {0};
+    rw.var_name = owner_type ? cbm_arena_sprintf(ctx->arena, "%s.%s", owner_type, field_name)
+                             : field_name;
+    rw.enclosing_func_qn = state->enclosing_func_qn;
+    rw.is_write = is_write;
+    cbm_rw_push(&ctx->result->rw, ctx->arena, rw);
 }
 
 // IL: method-reference (ldftn / ldvirtftn) — delegate/lambda construction.
