@@ -29,6 +29,7 @@ FORKS = {  # self-maintained forks: vendored LICENSE must match the original ups
 SPECIAL_NOTICE = {
     "assembly": "RETAINED-MIT (upstream RubixDev/tree-sitter-assembly deleted from GitHub)",
     "pine": "PROVENANCE-NOTICE (upstream kvarenzn/tree-sitter-pine declares ISC, ships no license file)",
+    "il": "FIRST-PARTY-EXTERNAL (FortMyersBrewing/tree-sitter-il @848bbc075841 — authored for this integration; own MIT, (c) tree-sitter-il contributors; identical MIT text to project root, separate copyright holder)",
 }
 DISAGREEMENT = {
     "jinja2": "dbt-labs/tree-sitter-jinja2",

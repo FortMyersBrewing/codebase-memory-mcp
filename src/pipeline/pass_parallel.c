@@ -1968,6 +1968,80 @@ static void resolve_file_rw(resolve_ctx_t *rc, resolve_worker_state_t *ws, CBMFi
     }
 }
 
+/* Resolve IL field accesses (ldfld/stfld/...) → READS/WRITES edges to Field
+ * nodes, using EXACT owner-type resolution (no bare-name suffix matching).
+ *
+ * The owner_type from the field instruction is an IL type reference that may use
+ * '/' for nested types (e.g. "Outer/'<State>d__1'") and carries no assembly ref
+ * (stripped at extraction). The Field node's QN is "<class_qn>.<field>" where the
+ * nested class QN uses '.' as the separator, so:
+ *   1) convert '/' → '.' to recover the dotted owner path, then
+ *   2) try the same-file class QN exactly (module path + owner), and
+ *   3) fall back to resolving the owner as a class via the registry (cross-file).
+ * Cross-assembly owners (no matching in-corpus class) resolve to nothing and are
+ * skipped — there is no Field node to point at. Exact resolution is what lets
+ * high-collision state-machine fields ('<>1__state', '<>t__builder', repeated
+ * across thousands of classes) resolve to the CORRECT owner, where a bare-name
+ * match would collide or exceed the candidate cap and be dropped. */
+static void resolve_file_field_accesses(resolve_ctx_t *rc, resolve_worker_state_t *ws,
+                                        CBMFileResult *result, const char *rel,
+                                        const char *module_qn, const char **imp_keys,
+                                        const char **imp_vals, int imp_count) {
+    for (int i = 0; i < result->field_accesses.count; i++) {
+        CBMFieldAccess *fa = &result->field_accesses.items[i];
+        if (!fa->field_name || !fa->field_name[0] || !fa->owner_type || !fa->owner_type[0]) {
+            continue;
+        }
+        const cbm_gbuf_node_t *src =
+            find_source_node(rc->main_gbuf, rc->project_name, rel, fa->enclosing_func_qn);
+        if (!src) {
+            continue;
+        }
+
+        /* '/' (IL nested-type separator) → '.' to match the dotted class QN. */
+        char owner[CBM_SZ_512];
+        size_t w = 0;
+        for (const char *p = fa->owner_type; *p && w + SKIP_ONE < sizeof(owner); p++) {
+            owner[w++] = (*p == '/') ? '.' : *p;
+        }
+        owner[w] = '\0';
+
+        const cbm_gbuf_node_t *tgt = NULL;
+
+        /* 1) Same-file: <project.path>.<owner>.<field> exact. */
+        char *class_qn = cbm_pipeline_fqn_compute(rc->project_name, rel, owner);
+        if (class_qn) {
+            char field_qn[CBM_SZ_1K];
+            int wrote = snprintf(field_qn, sizeof(field_qn), "%s.%s", class_qn, fa->field_name);
+            if (wrote > 0 && (size_t)wrote < sizeof(field_qn)) {
+                tgt = cbm_gbuf_find_by_qn(rc->main_gbuf, field_qn);
+            }
+            free(class_qn);
+        }
+
+        /* 2) Cross-file: resolve owner as a class, then <class_qn>.<field>. */
+        if (!tgt) {
+            const char *cqn =
+                resolve_as_class(rc->registry, owner, module_qn, imp_keys, imp_vals, imp_count);
+            if (cqn) {
+                char field_qn[CBM_SZ_1K];
+                int wrote = snprintf(field_qn, sizeof(field_qn), "%s.%s", cqn, fa->field_name);
+                if (wrote > 0 && (size_t)wrote < sizeof(field_qn)) {
+                    tgt = cbm_gbuf_find_by_qn(rc->main_gbuf, field_qn);
+                }
+            }
+        }
+
+        /* Only emit when the target is actually a Field (guards the rare case of
+         * a method/field QN collision within a class). */
+        if (!tgt || src->id == tgt->id || !tgt->label || strcmp(tgt->label, "Field") != 0) {
+            continue;
+        }
+        const char *etype = fa->is_write ? "WRITES" : "READS";
+        cbm_gbuf_insert_edge(ws->local_edge_buf, src->id, tgt->id, etype, "{}");
+    }
+}
+
 /* Resolve base_classes → INHERITS edges for one definition. */
 static void resolve_def_inherits(resolve_ctx_t *rc, resolve_worker_state_t *ws,
                                  const CBMDefinition *def, const cbm_gbuf_node_t *node,
@@ -2385,6 +2459,8 @@ static void resolve_worker(int worker_id, void *ctx_ptr) {
         /* ── READS / WRITES ────────────────────────────────────── */
         _ph_t0 = extract_now_ns();
         resolve_file_rw(rc, ws, result, rel, module_qn, imp_keys, imp_vals, imp_count);
+        /* IL field accesses → READS/WRITES to Field nodes (exact owner resolution). */
+        resolve_file_field_accesses(rc, ws, result, rel, module_qn, imp_keys, imp_vals, imp_count);
         atomic_fetch_add_explicit(&rc->time_ns_rw, extract_now_ns() - _ph_t0, memory_order_relaxed);
 
         /* ── INHERITS + DECORATES + IMPLEMENTS ──────────────────── */

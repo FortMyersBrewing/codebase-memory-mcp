@@ -304,6 +304,72 @@ static int resolve_rw_edges(cbm_pipeline_ctx_t *ctx, const CBMFileResult *result
     return resolved;
 }
 
+/* Sequential mirror of resolve_file_field_accesses (pass_parallel.c): IL field
+ * accesses → READS/WRITES edges to Field nodes via EXACT owner-type resolution.
+ * See the parallel version for the rationale (nested '/' → '.', same-file exact
+ * lookup, cross-file class resolution, no bare-name fallback). */
+static int resolve_field_access_edges(cbm_pipeline_ctx_t *ctx, const CBMFileResult *result,
+                                      const char *rel, const char *module_qn, const char **imp_keys,
+                                      const char **imp_vals, int imp_count) {
+    int resolved = 0;
+    for (int i = 0; i < result->field_accesses.count; i++) {
+        CBMFieldAccess *fa = &result->field_accesses.items[i];
+        if (!fa->field_name || !fa->field_name[0] || !fa->owner_type || !fa->owner_type[0]) {
+            continue;
+        }
+        const cbm_gbuf_node_t *src = find_enclosing_node(ctx, fa->enclosing_func_qn, rel);
+        if (!src) {
+            continue;
+        }
+
+        char owner[CBM_SZ_512];
+        size_t w = 0;
+        for (const char *p = fa->owner_type; *p && w + SKIP_ONE < sizeof(owner); p++) {
+            owner[w++] = (*p == '/') ? '.' : *p;
+        }
+        owner[w] = '\0';
+
+        const cbm_gbuf_node_t *tgt = NULL;
+
+        /* 1) Same-file exact. */
+        char *class_qn = cbm_pipeline_fqn_compute(ctx->project_name, rel, owner);
+        if (class_qn) {
+            char field_qn[CBM_SZ_1K];
+            int wrote = snprintf(field_qn, sizeof(field_qn), "%s.%s", class_qn, fa->field_name);
+            if (wrote > 0 && (size_t)wrote < sizeof(field_qn)) {
+                tgt = cbm_gbuf_find_by_qn(ctx->gbuf, field_qn);
+            }
+            free(class_qn);
+        }
+
+        /* 2) Cross-file: resolve owner as a class-like def, then <class_qn>.<field>. */
+        if (!tgt) {
+            cbm_resolution_t res = cbm_registry_resolve(ctx->registry, owner, module_qn, imp_keys,
+                                                        imp_vals, imp_count);
+            if (res.qualified_name && res.qualified_name[0]) {
+                const char *label = cbm_registry_label_of(ctx->registry, res.qualified_name);
+                if (label && (strcmp(label, "Class") == 0 || strcmp(label, "Interface") == 0 ||
+                              strcmp(label, "Type") == 0 || strcmp(label, "Enum") == 0)) {
+                    char field_qn[CBM_SZ_1K];
+                    int wrote = snprintf(field_qn, sizeof(field_qn), "%s.%s", res.qualified_name,
+                                         fa->field_name);
+                    if (wrote > 0 && (size_t)wrote < sizeof(field_qn)) {
+                        tgt = cbm_gbuf_find_by_qn(ctx->gbuf, field_qn);
+                    }
+                }
+            }
+        }
+
+        if (!tgt || src->id == tgt->id || !tgt->label || strcmp(tgt->label, "Field") != 0) {
+            continue;
+        }
+        const char *edge_type = fa->is_write ? "WRITES" : "READS";
+        cbm_gbuf_insert_edge(ctx->gbuf, src->id, tgt->id, edge_type, "{}");
+        resolved++;
+    }
+    return resolved;
+}
+
 int cbm_pipeline_pass_usages(cbm_pipeline_ctx_t *ctx, const cbm_file_info_t *files,
                              int file_count) {
     cbm_log_info("pass.start", "pass", "usages", "files", itoa_log(file_count));
@@ -343,7 +409,8 @@ int cbm_pipeline_pass_usages(cbm_pipeline_ctx_t *ctx, const cbm_file_info_t *fil
             result_owned = true;
         }
 
-        if (result->usages.count == 0 && result->throws.count == 0 && result->rw.count == 0) {
+        if (result->usages.count == 0 && result->throws.count == 0 && result->rw.count == 0 &&
+            result->field_accesses.count == 0) {
             if (result_owned) {
                 cbm_free_result(result);
             }
@@ -362,6 +429,8 @@ int cbm_pipeline_pass_usages(cbm_pipeline_ctx_t *ctx, const cbm_file_info_t *fil
         throw_resolved +=
             resolve_throw_edges(ctx, result, rel, module_qn, imp_keys, imp_vals, imp_count);
         rw_resolved += resolve_rw_edges(ctx, result, rel, module_qn, imp_keys, imp_vals, imp_count);
+        rw_resolved +=
+            resolve_field_access_edges(ctx, result, rel, module_qn, imp_keys, imp_vals, imp_count);
 
         free(module_qn);
         free_import_map(imp_keys, imp_vals, imp_count);

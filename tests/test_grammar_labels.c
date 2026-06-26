@@ -85,7 +85,7 @@ static const LabelGolden LABEL_GOLDENS[] = {
     {"javascript", "Class:1,Function:1,Module:1"},
     {"typescript", "Class:1,Function:1,Module:1"},
     {"tsx", "Function:1,Module:1"},
-    {"il", "Class:1,Method:2,Module:1"},
+    {"il", "Class:1,Field:1,Method:2,Module:1"},
     {"java", "Class:1,Method:1,Module:1"},
     {"kotlin", "Class:1,Function:1,Module:1"},
     {"rust", "Class:1,Function:1,Module:1"},

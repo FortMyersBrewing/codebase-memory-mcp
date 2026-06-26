@@ -82,11 +82,25 @@ home each call, so `cd` inline.
 | `field_definition` | field_node_types | `Field` node *(needed the fix in §5)* |
 | `call_instruction` (call/callvirt/newobj/calli) | call_node_types | `CALLS` edge |
 | `extern_assembly` (`.assembly extern`) | import_node_types | import |
-| `exception_block` (`.try/.catch/...`) | branching_node_types | `Branch` |
+| `exception_block` (`.try/.catch/...`) | branching_node_types | *method `complexity`/`cognitive` (NO graph node — see ⚠ below)* |
 | `local_declaration` (`.locals`) | variable_node_types | variable |
 | `throw_instruction` (throw/rethrow) | throw_node_types | `THROWS` edge |
 | `field_instruction` (ldfld/ldsfld/stfld/stsfld/ldflda/ldsflda) | *(IL handler)* | `READS`/`WRITES` edge → `Field` *(fix in §5)* |
 | `method_reference_instruction` (ldftn/ldvirtftn) | *(IL handler)* | `USAGE` edge |
+
+> **⚠ `branching_node_types` does NOT create graph nodes — for ANY language.**
+> An earlier version of this table claimed `exception_block` → a graph `Branch`
+> node. That was wrong. The graph **`Branch`** label is the *git* branch
+> (`pipeline.c` `pass_structure` → `HAS_BRANCH`); there is exactly one per project
+> (`working-tree` when not on a named branch). `branching_node_types` is consumed
+> ONLY by `cbm_compute_complexity` (`helpers.c`), which raises each method's
+> `complexity` (cyclomatic) and `cognitive` properties. Because IL declares no
+> loop node types, **all** IL method complexity comes from `.try` blocks — verified
+> on the live ILDump graph: 9,670 methods carry `complexity >= 1`, consistent with
+> the 2,674 files that contain `.try`. So `.try` extraction *works*; it lands in a
+> method property, not a node. Query it with
+> `MATCH (m:Method) WHERE m.complexity >= 1 RETURN count(m)`. No cbm language emits
+> per-control-flow Branch graph nodes; exception *throwing* is the `THROWS` edge.
 
 cbm reads tree-sitter **field names** the grammar sets: `field('name', …)`,
 `field('function', …)` (call callee), `field('field', …)` (field-access target),
@@ -138,20 +152,23 @@ Compiled into the binary as `prod_grammar_il.o`.
 - `[CBM_LANG_IL] = ".NET IL"` display name (~line 748).
 - `CBM_LANG_IL` is in the `CBMLanguage` enum (`internal/cbm/cbm.h`).
 
-### 3.4 `internal/cbm/extract_semantic.c` — IL-specific handlers
-Both guard `if (spec->language != CBM_LANG_IL) return;`. Invoked by the generic walk
-in `internal/cbm/extract_unified.c` (~lines 851–855, alongside `handle_calls`,
+### 3.4 `internal/cbm/extract_semantic.c` — IL-specific handler
+Guards `if (spec->language != CBM_LANG_IL) return;`. Invoked by the generic walk
+in `internal/cbm/extract_unified.c` (~line 854, alongside `handle_calls`,
 `handle_throws`).
 
 - **`handle_field_accesses`** — fires on node type `field_instruction`. Reads the
   `field` field (target name), `opcode` (write = `stfld`/`stsfld`), and owner type
   (the named child immediately before the field name, skipping a `generic_suffix`).
-  Pushes a `CBMFieldAccess` to `result->field_accesses` **and** (the §5 fix) an
-  owner-qualified `CBMReadWrite` to `result->rw`.
-- **`handle_method_references`** — fires on `method_reference_instruction`
-  (ldftn/ldvirtftn). Pushes a `CBMMethodReference`. (Currently surfaces as a `USAGE`
-  edge via the generic usage path; a dedicated `METHOD_REFERENCE` edge type is a
-  possible future taxonomy improvement.)
+  Pushes a `CBMFieldAccess` to `result->field_accesses`. The pipeline consumes that
+  array directly with **exact** owner-type resolution (§3.7) — the handler no longer
+  pushes a synthetic owner-qualified `CBMReadWrite` (that was the §5 workaround; see
+  §8 for why it was replaced).
+- **ldftn / ldvirtftn** (method references) get **no** dedicated handler or array.
+  The method-name + owner-type identifiers inside the operand are already captured
+  by the generic usage walker (`handle_usages`) as `USAGE` edges resolved to the
+  target `Method` by name, so the delegate/lambda-wiring signal is present and
+  queryable without an IL-only `METHOD_REFERENCE` edge type (decision §8).
 
 ### 3.5 `internal/cbm/extract_defs.c` — IL field-def branch (§5 fix)
 `extract_class_fields` (~line 4806) gets an `if (ctx->language == CBM_LANG_IL)`
@@ -161,24 +178,37 @@ branch that builds the `Field` def directly (see §5 for why).
 ```c
 typedef struct { const char *var_name; const char *enclosing_func_qn; bool is_write; } CBMReadWrite;
 typedef struct { const char *owner_type; const char *field_name;  const char *enclosing_func_qn; bool is_write; } CBMFieldAccess;
-typedef struct { const char *owner_type; const char *method_name; const char *enclosing_func_qn; ... } CBMMethodReference;
-// CBMFileResult has: defs, calls, imports, usages, throws, rw, field_accesses, method_references, ...
+// CBMFileResult has: defs, calls, imports, usages, throws, rw, ..., field_accesses (last array field)
 ```
 Push fns: `cbm_defs_push`, `cbm_rw_push`, `cbm_field_accesses_push`.
+(The `CBMMethodReference` type + `method_references` array were **removed** this
+session — ldftn/ldvirtftn ride the `USAGE` path; see §8.)
 **Rule: append any NEW `CBMFileResult` fields at the END** (stale `.o` from a
 mid-struct insertion has caused segfaults; always `make clean-c` after a struct
-change).
+change — removing the last array field this session required a clean rebuild too).
 
 ### 3.7 Edge creation (pipeline)
-`result->rw` → `READS`/`WRITES` edges in **two** places (both must agree):
-- `src/pipeline/pass_parallel.c` — `resolve_file_rw` (~line 1947). *Primary path at
-  index time* (the fused parallel worker).
-- `src/pipeline/pass_usages.c` — `resolve_rw_edges` (~line 278). Sequential fallback.
+**Two independent producers of `READS`/`WRITES` edges**, both mirrored in the
+parallel (primary) and sequential (fallback) passes:
 
-Both: find enclosing method node → `cbm_registry_resolve(var_name, module_qn,
-imports)` (suffix-match into the qn index) → `cbm_gbuf_find_by_qn` → insert
-`WRITES`/`READS` edge. `result->field_accesses` and `result->method_references` are
-NOT consumed by the pipeline — they're auxiliary; the edges come via `rw`/`usages`.
+1. `result->rw` (generic read/write accesses, e.g. C#-side) →
+   `resolve_file_rw` (`pass_parallel.c`) / `resolve_rw_edges` (`pass_usages.c`).
+   Resolves `var_name` via `cbm_registry_resolve` (suffix-match into the qn index).
+2. `result->field_accesses` (IL `ldfld`/`stfld`/…) →
+   **`resolve_file_field_accesses`** (`pass_parallel.c`, primary) /
+   **`resolve_field_access_edges`** (`pass_usages.c`, fallback). **Exact**
+   owner-type resolution — NOT suffix-match:
+   - convert the IL nested-type separator `/` → `.` (`Outer/'<S>d__1'` →
+     `Outer.'<S>d__1'`),
+   - same-file: `cbm_pipeline_fqn_compute(project, rel, owner)` + `.` + field, exact
+     `cbm_gbuf_find_by_qn`,
+   - cross-file: resolve `owner` as a class (registry) → `class_qn` + `.` + field,
+   - skip cross-assembly (`[asm]Type`) owners (no in-corpus Field node),
+   - emit only when the target node's label is `Field`.
+
+   This exact path resolves high-collision state-machine fields (`'<>1__state'`,
+   `'<>t__builder'` — repeated across thousands of classes) that the old
+   `rw`-suffix workaround silently dropped (it exceeded the candidate cap). See §8.
 
 ---
 
@@ -309,3 +339,45 @@ See `IL_FIELD_ACCESS_HANDOFF.md` for the full QA write-up.
   DeusData/codebase-memory-mcp).
   - `79f95b0` vendored parser for full corpus; `6e97238` IL field defs + field-access
     edges; `35b963d` handoff doc.
+
+---
+
+## 8. PR-readiness pass (2026-06-25/26)
+
+Five items worked to make IL support rock-solid / PR-ready:
+
+1. **"Branch bug" — was a documentation error, not a code bug.** `exception_block`
+   feeds method `complexity`/`cognitive` (verified: 9,670 IL methods carry
+   `complexity >= 1`); it never created a graph node. The single graph `Branch`
+   node is the *git* branch. No cbm language emits per-control-flow Branch nodes.
+   Fixed the §2 table; added a regression test asserting `.try` raises complexity
+   (`tests/test_extraction.c::il_defs_field_accesses_and_complexity`).
+
+2. **field_accesses given a proper home (exact owner resolution).** Previously the
+   data was orphaned and edges came from a synthetic owner-qualified `rw` string
+   resolved by suffix-match — which **silently dropped every high-collision
+   state-machine field** (`'<>1__state'` etc.: bare name exceeded the registry
+   candidate cap; `same_module` failed on the `/` vs `.` separator mismatch). The
+   pipeline now consumes `result->field_accesses` directly with exact
+   owner→class→field resolution (§3.7). Validated on `MaxSea.S57S63Installer`:
+   WRITES 297→**307**, READS 382→**400**, `'<>1__state'` writes **0→14**, Field
+   nodes unchanged (398), no double-edges. The synthetic `rw` push was removed.
+
+3. **ldftn/ldvirtftn: documented, not a new edge.** Decision: keep them under
+   `USAGE` (already captured, no data loss) rather than add an IL-only
+   `METHOD_REFERENCE` edge type (reuse existing edges = friendlier upstream PR).
+   The dead `CBMMethodReference` type + `method_references` array + handler were
+   **removed**.
+
+4. **Tests.** tree-sitter-il `test/corpus/` had only a malformed `basics.txt`
+   (`tree-sitter test` ran **0 parses**); rewrote it into 5 corpus files
+   (basics/declarations/instructions/exceptions/generics — 13 cases, 100% pass).
+   cbm: strengthened the IL grammar-regression row (Field + field-instruction
+   coverage), updated the IL label golden to include `Field:1`, and added the
+   extraction unit test above.
+
+5. **Provenance.** IL recorded in the grammar MANIFEST as **first-party-external**
+   (FortMyersBrewing/tree-sitter-il @`848bbc075841`, own MIT) and added to the
+   `SPECIAL_NOTICE` set in `audit-license-provenance.py`. Both audits pass:
+   `audit-grammar-security.sh` (IL clean) and `audit-license-provenance.py`
+   (IL = MANUAL-VERIFIED; "PROVENANCE AUDIT PASSED").

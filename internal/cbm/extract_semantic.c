@@ -416,70 +416,27 @@ void handle_field_accesses(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *s
         }
     }
 
+    /* Push to the dedicated field_accesses array. The pipeline's
+     * resolve_file_field_accesses (pass_parallel.c) / resolve_field_access_edges
+     * (pass_usages.c) consumes this with exact owner-type → class → field
+     * resolution and emits a READS/WRITES edge to the Field node. Owner-aware
+     * resolution is essential: bare field names like '<>1__state' repeat across
+     * thousands of state-machine classes, so a bare-name (suffix) match would
+     * either collide or exceed the candidate cap and be dropped entirely. */
     CBMFieldAccess fa = {0};
     fa.owner_type = owner_type;
     fa.field_name = field_name;
     fa.enclosing_func_qn = state->enclosing_func_qn;
     fa.is_write = is_write;
     cbm_field_accesses_push(&ctx->result->field_accesses, ctx->arena, fa);
-
-    /* Also emit as a read/write so the existing rw resolver (pass_parallel.c /
-     * pass_usages.c) turns it into a READS/WRITES edge. Use an owner-qualified
-     * name: bare field names like '<>1__state' repeat across thousands of
-     * state-machine classes and would resolve ambiguously via suffix-match. */
-    CBMReadWrite rw = {0};
-    rw.var_name = owner_type ? cbm_arena_sprintf(ctx->arena, "%s.%s", owner_type, field_name)
-                             : field_name;
-    rw.enclosing_func_qn = state->enclosing_func_qn;
-    rw.is_write = is_write;
-    cbm_rw_push(&ctx->result->rw, ctx->arena, rw);
 }
 
-// IL: method-reference (ldftn / ldvirtftn) — delegate/lambda construction.
-// Emits an edge carrying owner type + method name + enclosing method.
-void handle_method_references(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec,
-                              WalkState *state) {
-    if (spec->language != CBM_LANG_IL) {
-        return;
-    }
-    if (ts_node_is_null(node) || strcmp(ts_node_type(node), "method_reference_instruction") != 0) {
-        return;
-    }
-
-    TSNode mtd = ts_node_child_by_field_name(node, TS_FIELD("method"));
-    if (ts_node_is_null(mtd)) {
-        return;
-    }
-    char *method_name = cbm_node_text(ctx->arena, mtd, ctx->source);
-    if (!method_name || !method_name[0]) {
-        return;
-    }
-
-    // owner type = named child immediately before the method name (skip generic_suffix).
-    char *owner_type = NULL;
-    uint32_t nc = ts_node_named_child_count(node);
-    for (int i = (int)nc - 1; i >= 0; i--) {
-        TSNode c = ts_node_named_child(node, (uint32_t)i);
-        if (ts_node_eq(c, mtd) && i > 0) {
-            int oi = i - 1;
-            TSNode maybe = ts_node_named_child(node, (uint32_t)oi);
-            if (!ts_node_is_null(maybe) && strcmp(ts_node_type(maybe), "generic_suffix") == 0 && oi > 0) {
-                oi--;
-            }
-            TSNode owner = ts_node_named_child(node, (uint32_t)oi);
-            if (!ts_node_is_null(owner)) {
-                owner_type = cbm_node_text(ctx->arena, owner, ctx->source);
-            }
-            break;
-        }
-    }
-
-    CBMMethodReference mr = {0};
-    mr.owner_type = owner_type;
-    mr.method_name = method_name;
-    mr.enclosing_func_qn = state->enclosing_func_qn;
-    cbm_method_references_push(&ctx->result->method_references, ctx->arena, mr);
-}
+/* IL note: ldftn / ldvirtftn (delegate/lambda wiring) are NOT given a dedicated
+ * edge type. The method-name and owner-type identifiers inside the operand are
+ * already captured by the generic usage walker (handle_usages) as USAGE edges
+ * (resolved to the target Method by name), so the signal is present and
+ * queryable without adding an IL-only METHOD_REFERENCE edge to the schema. See
+ * IL_SUPPORT_NOTES.md §2/§8. */
 
 void handle_readwrites(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, WalkState *state) {
     if (!spec->assignment_node_types || !spec->assignment_node_types[0]) {

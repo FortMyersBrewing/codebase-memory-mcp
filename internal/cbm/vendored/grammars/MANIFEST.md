@@ -9,7 +9,7 @@ The grammars were originally vendored as bare `parser.c`+`scanner.c` with **no r
 
 ## Summary
 
-- Grammars: **158** — vendored-from-upstream: **141**, first-party/self-maintained: **12**, registry-disagreement: **5** (nim removed 2026-06-12; objectscript_udl + objectscript_routine added 2026-06-24 — see note below)
+- Grammars: **159** — vendored-from-upstream: **141**, first-party/self-maintained: **13**, registry-disagreement: **5** (nim removed 2026-06-12; objectscript_udl + objectscript_routine added 2026-06-24; **il** added 2026-06-25 as first-party-external — see First-party section)
 - ABI distribution: **7×** ABI-13 **85×** ABI-14 **64×** ABI-15 (runtime ceiling is ABI 15; never vendor ABI 16 without a runtime upgrade)
 - Vendored copies missing LICENSE: **0** — all upstream LICENSE files restored 2026-06-11 (first-party grammars carry the project MIT license; `move` uses the Helix-listed upstream tzakian/tree-sitter-move MIT text, `zsh` uses georgeharker/tree-sitter-zsh MIT)
 - `verdict`: VERIFIED-BOTH = our source matches *both* registries; VERIFIED-NVIM/HELIX = matches one; registry-disagreement = registries name a different repo (listed separately); `vendor-maintained` = the language vendor's own grammar, not in nvim/Helix.
@@ -137,7 +137,6 @@ Guarded by the `contract_all_grammars_in_graph` graph-breadth test in
 | objc | 14 | tree-sitter-grammars/tree-sitter-objc | `181a81b8f23a` | VERIFIED-NVIM | ✅ |
 | objectscript_routine | 15 | intersystems/tree-sitter-objectscript | `a7ffcdf2de8e` | vendor-maintained | ✅ |
 | objectscript_udl | 15 | intersystems/tree-sitter-objectscript | `a7ffcdf2de8e` | vendor-maintained | ✅ |
-| il | 15 | local/tree-sitter-il (first-party — authored for this integration) | `initial` | first-party | ✅ |
 | ocaml | 14 | tree-sitter/tree-sitter-ocaml | `5a979b3ec7f1` | VERIFIED-BOTH | ✅ |
 | odin | 14 | tree-sitter-grammars/tree-sitter-odin | `d2ca8efb4487` | VERIFIED-BOTH | ✅ |
 | pascal | 14 | Isopod/tree-sitter-pascal | `042119eca2e1` | VERIFIED-BOTH | ✅ |
@@ -216,6 +215,20 @@ upstream author (correctly retained). The table now records the true origin.
 | magma | 15 | ✅ project MIT |
 | protobuf | 13 | ✅ project MIT |
 | wolfram | 13 | ✅ project MIT |
+
+### First-party external repo (project-owned, separate grammar repo)
+
+This grammar is authored and maintained by the project owner in a **dedicated
+public repo** (not in-tree like the in-house grammars above, and not a fork of
+any prior upstream). Its vendored LICENSE carries the grammar repo's own MIT
+copyright (identical MIT text to the project root, different copyright holder),
+so it is recorded as `MANUAL-VERIFIED` / `FIRST-PARTY-EXTERNAL` in
+`scripts/audit-license-provenance.py` (the `SPECIAL_NOTICE` set). Re-vendor from
+the pinned commit via `tree-sitter generate` (see IL_SUPPORT_NOTES.md §1).
+
+| grammar | cur ABI | source repo | pinned commit | license |
+|---|:---:|---|---|---|
+| il | 15 | FortMyersBrewing/tree-sitter-il (first-party, authored for this integration) | `848bbc075841` | MIT, (c) 2026 tree-sitter-il contributors |
 
 ### Self-maintained forks (upstream license retained, byte-verified 2026-06-12)
 

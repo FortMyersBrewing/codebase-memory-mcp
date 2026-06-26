@@ -2829,6 +2829,95 @@ TEST(complexity_access_depth_and_params) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+ * .NET IL (.il) extraction — defs, field accesses (ldfld/stfld →
+ * field_accesses), and .try-driven complexity (exception_block feeds
+ * cyclomatic/cognitive; it does NOT create a graph Branch node — see
+ * IL_SUPPORT_NOTES.md §2). Guards the IL-specific handlers in
+ * extract_defs.c / extract_semantic.c.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* Count field accesses whose field name matches `name`, split by read/write. */
+static void count_field_accesses(CBMFileResult *r, const char *name, int *reads, int *writes) {
+    *reads = 0;
+    *writes = 0;
+    for (int i = 0; i < r->field_accesses.count; i++) {
+        const CBMFieldAccess *fa = &r->field_accesses.items[i];
+        if (fa->field_name && strcmp(fa->field_name, name) == 0) {
+            if (fa->is_write) {
+                (*writes)++;
+            } else {
+                (*reads)++;
+            }
+        }
+    }
+}
+
+TEST(il_defs_field_accesses_and_complexity) {
+    /* A class with a backing field, plus a method that reads (ldfld) and writes
+     * (stfld) it inside a .try/.catch (exception_block → complexity). */
+    CBMFileResult *r = extract(".class public Foo\n"
+                               "{\n"
+                               "  .field private int32 counter\n"
+                               "  .method public hidebysig instance void Bump() cil managed\n"
+                               "  {\n"
+                               "    .maxstack 8\n"
+                               "    .try\n"
+                               "    {\n"
+                               "      ldarg.0\n"
+                               "      ldarg.0\n"
+                               "      ldfld int32 Foo::counter\n"
+                               "      ldc.i4.1\n"
+                               "      add\n"
+                               "      stfld int32 Foo::counter\n"
+                               "      leave.s DONE\n"
+                               "    }\n"
+                               "    catch [mscorlib]System.Exception\n"
+                               "    {\n"
+                               "      pop\n"
+                               "      leave.s DONE\n"
+                               "    }\n"
+                               "    DONE: ret\n"
+                               "  }\n"
+                               "}\n",
+                               CBM_LANG_IL, "t", "Foo.il");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+
+    /* Definitions: Class Foo, Field counter, Method Bump. */
+    const CBMDefinition *cls = find_def(r, "Foo");
+    ASSERT_NOT_NULL(cls);
+    ASSERT_STR_EQ(cls->label, "Class");
+    const CBMDefinition *fld = find_def(r, "counter");
+    ASSERT_NOT_NULL(fld);
+    ASSERT_STR_EQ(fld->label, "Field");
+    const CBMDefinition *m = find_def(r, "Bump");
+    ASSERT_NOT_NULL(m);
+    ASSERT_STR_EQ(m->label, "Method");
+
+    /* Field accesses: exactly one read (ldfld) and one write (stfld) of counter,
+     * carrying the owner type so the pipeline can resolve owner-aware edges. */
+    int reads = 0, writes = 0;
+    count_field_accesses(r, "counter", &reads, &writes);
+    ASSERT_EQ(reads, 1);
+    ASSERT_EQ(writes, 1);
+    bool owner_ok = false;
+    for (int i = 0; i < r->field_accesses.count; i++) {
+        const CBMFieldAccess *fa = &r->field_accesses.items[i];
+        if (fa->field_name && strcmp(fa->field_name, "counter") == 0 && fa->owner_type &&
+            strcmp(fa->owner_type, "Foo") == 0) {
+            owner_ok = true;
+        }
+    }
+    ASSERT_TRUE(owner_ok);
+
+    /* exception_block (.try) raises method complexity (no graph Branch node). */
+    ASSERT_GTE(m->complexity, 1);
+
+    cbm_free_result(r);
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════════
  * Perl call-graph noise (#459 follow-up)
  * ═══════════════════════════════════════════════════════════════════ */
 
@@ -3173,6 +3262,7 @@ SUITE(extraction) {
     RUN_TEST(complexity_recursion_in_loop_unguarded);
     RUN_TEST(complexity_guarded_recursion);
     RUN_TEST(complexity_access_depth_and_params);
+    RUN_TEST(il_defs_field_accesses_and_complexity);
 
     cbm_shutdown();
 }

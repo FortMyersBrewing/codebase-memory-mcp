@@ -255,3 +255,23 @@ rm ~/.cache/codebase-memory-mcp/C-Users-whyter-projects-ILDump.db*
 Expect Field nodes in the tens of thousands and WRITES/READS-to-Field edges in
 the thousands (≈679 field edges came from the single `MaxSea.S57S63Installer`
 assembly alone).
+
+---
+
+## Update (2026-06-26) — resolution upgraded; arrays cleaned up
+
+The `rw`-suffix workaround described above was **replaced** by exact owner-type
+resolution that consumes `result->field_accesses` directly. See
+**IL_SUPPORT_NOTES.md §3.7 and §8**. Why it mattered: the workaround silently
+**dropped every high-collision state-machine field** (`'<>1__state'`,
+`'<>t__builder'`, …) — the bare name exceeded the registry candidate cap and the
+`same_module` exact match failed on the IL `/` (nested-type) vs `.` (QN)
+separator mismatch. Re-validated on `MaxSea.S57S63Installer`: WRITES 297→**307**,
+READS 382→**400**, `'<>1__state'` writes **0→14**, Field nodes unchanged (398),
+no double-edges. The orphaned `method_references` array (and its `ldftn` handler)
+were removed — ldftn/ldvirtftn ride the existing `USAGE` path.
+
+> **Live ILDump re-deploy is still pending the same manual step** (close this
+> window to release the db lock, `rm` only `C-Users-whyter-projects-ILDump.db*`,
+> re-index in a new window). The currently-deployed graph still uses the old
+> workaround's edges until re-indexed with the new binary.
