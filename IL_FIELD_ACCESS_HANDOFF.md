@@ -226,10 +226,20 @@ Files changed (C-side only; grammar untouched; no struct changes):
 - `method_reference`/`ldftn` left under USAGE as the handoff allowed — taxonomy
   choice, not data loss.
 
-### Refreshing the live full `ILDump` graph (deployment note)
+### Live full `ILDump` graph — REFRESHED & DEPLOYED (2026-06-25)
 
-The full project (`C-Users-whyter-projects-ILDump`) still holds the **pre-fix**
-graph (no Field nodes). It can't be refreshed in place because:
+Done. Fresh full re-index of `C-Users-whyter-projects-ILDump` with the fixed binary:
+**Field nodes 0 → 96,042; WRITES→Field 58 → 78,470; READS→Field 0 → 140,648.**
+Existing signals unchanged (Method 169,491; Class 18,592 — no regression). The
+graph now carries IL field-access edges project-wide.
+
+> The refresh required deleting **only** that one project's db file
+> (`C-Users-whyter-projects-ILDump.db*`) — one SQLite file per project; all other
+> projects (TimeZero, dnSpyEx, TZStudy, …) were untouched.
+
+### (Historical) why the refresh was initially blocked
+
+It could not be refreshed in place at first because:
 1. cbm's incremental indexer is **content-hash based** — the `.il` files didn't
    change (only the extractor did), so re-indexing is a `incremental.noop`.
 2. The forced-reindex path (and a manual `rm`) is blocked: the running `cbm-dev`
