@@ -9,9 +9,13 @@ interface UseGraphDataResult {
   fetchDetail: (project: string, centerNode: string) => void;
 }
 
+/* Overview cap: a 3D Three.js scene renders a few thousand nodes smoothly but
+ * freezes the browser well before tens of thousands. The backend now returns the
+ * highest-degree nodes for the cap (sort_by=degree), so this is the connected
+ * "backbone" of large graphs (e.g. the 310K-node IL dump), not an arbitrary slice. */
 async function fetchLayout(
   project: string,
-  maxNodes = 50000,
+  maxNodes = 2500,
 ): Promise<GraphData> {
   const params = new URLSearchParams({ project, max_nodes: String(maxNodes) });
   const res = await fetch(`/api/layout?${params}`);
@@ -33,7 +37,7 @@ export function useGraphData(): UseGraphDataResult {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchLayout(project, 50000);
+      const result = await fetchLayout(project);
       setData(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch layout");
@@ -48,7 +52,7 @@ export function useGraphData(): UseGraphDataResult {
       setError(null);
       try {
         /* TODO: detail level with center_node filtering */
-        const result = await fetchLayout(project, 50000);
+        const result = await fetchLayout(project);
         setData(result);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to fetch layout");

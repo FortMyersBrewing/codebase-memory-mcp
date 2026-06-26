@@ -26,24 +26,29 @@ export function useProjects(): UseProjectsResult {
       const result = await callTool<{ projects: Project[] }>("list_projects");
       const list = result.projects ?? [];
 
-      /* Fetch schema for each project */
-      const infos: ProjectInfo[] = await Promise.all(
-        list.map(async (p) => {
-          try {
-            const schema = await callTool<SchemaInfo>("get_graph_schema", {
-              project: p.name,
-            });
-            return { project: p, schema };
-          } catch {
-            return { project: p, schema: null };
-          }
-        }),
-      );
+      /* Show the project list immediately (schema null), then enrich each with
+       * its schema in the background. get_graph_schema scans the graph and can
+       * take seconds on a large project (cold); blocking the whole list on
+       * Promise.all over every project made the UI appear empty until the
+       * slowest scan finished. Render first, fill counts in as they arrive. */
+      setProjects(list.map((p) => ({ project: p, schema: null })));
+      setLoading(false);
 
-      setProjects(infos);
+      for (const p of list) {
+        callTool<SchemaInfo>("get_graph_schema", { project: p.name })
+          .then((schema) => {
+            setProjects((prev) =>
+              prev.map((info) =>
+                info.project.name === p.name ? { ...info, schema } : info,
+              ),
+            );
+          })
+          .catch(() => {
+            /* leave schema null for this project */
+          });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch projects");
-    } finally {
       setLoading(false);
     }
   }, []);

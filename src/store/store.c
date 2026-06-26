@@ -322,7 +322,7 @@ int64_t cbm_store_resolve_mmap_size(void) {
     return (int64_t)parsed;
 }
 
-static int configure_pragmas(cbm_store_t *s, bool in_memory) {
+static int configure_pragmas(cbm_store_t *s, bool in_memory, bool query_mode) {
     int rc;
     rc = exec_sql(s, "PRAGMA foreign_keys = ON;");
     if (rc != CBM_STORE_OK) {
@@ -335,6 +335,23 @@ static int configure_pragmas(cbm_store_t *s, bool in_memory) {
 
     if (in_memory) {
         rc = exec_sql(s, "PRAGMA synchronous = OFF;");
+    } else if (query_mode) {
+        /* Read/query handle. The DB is already WAL on disk, so do NOT re-issue
+         * `journal_mode = WAL` or `wal_checkpoint` here: both need a write/lock
+         * moment and BLOCK (up to busy_timeout) when another process — e.g. the
+         * live UI server — holds the same (possibly multi-GB) DB open. That was
+         * the cause of ~50s `list_projects`/`/api/layout` stalls in the UI. WAL
+         * readers are lock-free, so a plain read handle needs none of it. Keep a
+         * short busy_timeout so any incidental lock fails fast instead of hanging.
+         */
+        rc = exec_sql(s, "PRAGMA busy_timeout = 3000;");
+        if (rc != CBM_STORE_OK) {
+            return rc;
+        }
+        char mmap_sql[ST_BUF_64];
+        snprintf(mmap_sql, sizeof(mmap_sql), "PRAGMA mmap_size = %lld;",
+                 (long long)cbm_store_resolve_mmap_size());
+        rc = exec_sql(s, mmap_sql);
     } else {
         rc = exec_sql(s, "PRAGMA busy_timeout = 10000;");
         if (rc != CBM_STORE_OK) {
@@ -593,7 +610,7 @@ static cbm_store_t *store_open_internal(const char *path, bool in_memory) {
     sqlite3_create_function(s->db, "cbm_camel_split", SKIP_ONE, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
                             NULL, sqlite_camel_split, NULL, NULL);
 
-    if (configure_pragmas(s, in_memory) != CBM_STORE_OK || init_schema(s) != CBM_STORE_OK ||
+    if (configure_pragmas(s, in_memory, false) != CBM_STORE_OK || init_schema(s) != CBM_STORE_OK ||
         create_user_indexes(s) != CBM_STORE_OK) {
         sqlite3_close(s->db);
         safe_str_free(&s->db_path);
@@ -649,7 +666,7 @@ cbm_store_t *cbm_store_open_path_query(const char *db_path) {
     sqlite3_create_function(s->db, "cbm_camel_split", SKIP_ONE, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
                             NULL, sqlite_camel_split, NULL, NULL);
 
-    if (configure_pragmas(s, false) != CBM_STORE_OK) {
+    if (configure_pragmas(s, false, true) != CBM_STORE_OK) {
         sqlite3_close(s->db);
         safe_str_free(&s->db_path);
         free(s);
@@ -2489,8 +2506,18 @@ int cbm_store_search(cbm_store_t *s, const cbm_search_params_t *params, cbm_sear
     int limit = params->limit > 0 ? params->limit : CBM_DEFAULT_SEARCH_LIMIT;
     int offset = params->offset;
     const char *name_col = has_degree_filter ? "name" : "n.name";
+    /* sort_by="degree": order hubs first so a capped result (e.g. the graph-UI
+     * overview's max_nodes) returns the most-connected backbone, not an
+     * arbitrary alphabetical slice. in_deg/out_deg are selected aliases present
+     * in both the plain and degree-filtered query shapes. Default stays name. */
+    char order_by[CBM_SZ_64];
+    if (params->sort_by && strcmp(params->sort_by, "degree") == 0) {
+        snprintf(order_by, sizeof(order_by), "(in_deg + out_deg) DESC, %s", name_col);
+    } else {
+        snprintf(order_by, sizeof(order_by), "%s", name_col);
+    }
     char order_limit[CBM_SZ_128];
-    snprintf(order_limit, sizeof(order_limit), " ORDER BY %s LIMIT %d OFFSET %d", name_col, limit,
+    snprintf(order_limit, sizeof(order_limit), " ORDER BY %s LIMIT %d OFFSET %d", order_by, limit,
              offset);
     strncat(sql, order_limit, sizeof(sql) - strlen(sql) - 1);
 

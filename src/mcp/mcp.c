@@ -961,13 +961,20 @@ static void build_project_json_entry(yyjson_mut_doc *doc, yyjson_mut_val *arr, c
     char full_path[CBM_SZ_2K];
     snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
 
-    cbm_store_t *pstore = cbm_store_open_path(full_path);
-    int nodes = 0;
-    int edges = 0;
+    /* Read-only query open: no journal_mode/checkpoint, so it never blocks on a
+     * lock held by the live server (a large project DB could otherwise stall the
+     * whole project list ~50s — see configure_pragmas query_mode). */
+    cbm_store_t *pstore = cbm_store_open_path_query(full_path);
+    /* nodes/edges are reported as -1 ("not computed") here: a full COUNT(*) over
+     * a large graph (e.g. ILDump: 2.3M edges in a 1.73 GB DB) reads the whole
+     * table cold (~40s) and stalled the entire project list. The UI derives
+     * counts from get_graph_schema per project instead; MCP consumers that want
+     * exact counts should call get_graph_schema. Only the cheap project metadata
+     * (root_path/git) is read here. */
+    int nodes = -1;
+    int edges = -1;
     char root_path_buf[CBM_SZ_1K] = "";
     if (pstore) {
-        nodes = cbm_store_count_nodes(pstore, project_name);
-        edges = cbm_store_count_edges(pstore, project_name);
         cbm_project_t proj = {0};
         if (cbm_store_get_project(pstore, project_name, &proj) == CBM_STORE_OK) {
             if (proj.root_path) {

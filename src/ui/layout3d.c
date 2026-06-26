@@ -400,6 +400,10 @@ cbm_layout_result_t *cbm_layout_compute(cbm_store_t *store, const char *project,
     params.limit = max_nodes;
     params.min_degree = -1;
     params.max_degree = -1;
+    /* When the node count exceeds max_nodes, keep the highest-degree nodes (the
+     * structural backbone) rather than an arbitrary alphabetical slice — so a
+     * huge graph's overview is meaningful and renderable. */
+    params.sort_by = "degree";
 
     cbm_search_output_t search_out;
     memset(&search_out, 0, sizeof(search_out));

@@ -485,7 +485,7 @@ static void handle_adr_get(cbm_http_conn_t *c, const cbm_http_req_t *req) {
     char db_path[1024];
     db_path_for_project(name, db_path, sizeof(db_path));
 
-    cbm_store_t *store = cbm_store_open_path(db_path);
+    cbm_store_t *store = cbm_store_open_path_query(db_path); /* read-only: no WAL lock contention */
     if (!store) {
         cbm_http_replyf(c, 200, g_cors_json, "{\"has_adr\":false}");
         return;
@@ -883,7 +883,7 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req)
         return;
     }
 
-    cbm_store_t *store = cbm_store_open_path(db_path);
+    cbm_store_t *store = cbm_store_open_path_query(db_path); /* read-only: no WAL lock contention */
     if (!store) {
         cbm_http_replyf(c, 200, g_cors_json, "{\"status\":\"corrupt\",\"reason\":\"cannot open\"}");
         return;
@@ -984,7 +984,7 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
         return;
     }
 
-    cbm_store_t *store = cbm_store_open_path(db_path);
+    cbm_store_t *store = cbm_store_open_path_query(db_path); /* read-only: no WAL lock contention */
     if (!store) {
         cbm_http_replyf(c, 500, g_cors_json, "{\"error\":\"cannot open store\"}");
         return;
@@ -1047,7 +1047,7 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
             continue;
         }
 
-        cbm_store_t *lp_store = cbm_store_open_path(lp_path);
+        cbm_store_t *lp_store = cbm_store_open_path_query(lp_path); /* read-only */
         if (!lp_store) {
             free(linked[li]);
             continue;
